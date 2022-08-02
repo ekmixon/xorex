@@ -42,7 +42,7 @@ def extract_byte_chains(input_file, window_size_max=10):
             'byte_stats': collections.Counter()
         }
 
-        for i in range(0, len(fdata)):
+        for i in range(len(fdata)):
             byte_chain = fdata[i:(i+ws)]
             if is_usable(byte_chain):
                 stats['byte_stats'].update([byte_chain.hex()])
@@ -58,15 +58,9 @@ def is_usable(byte_chain):
     :param byte_chain:
     :return:
     """
-    # Skip zero byte keys
-    only_zeros = True
-    for c in byte_chain:
-        if c != 0x00:
-            only_zeros = False
+    only_zeros = all(c == 0x00 for c in byte_chain)
     # Not usable
-    if only_zeros:
-        return False
-    return True
+    return not only_zeros
 
 
 def xor(data, key):
@@ -118,11 +112,11 @@ def evaluate_keys(input_file, all_stats, top_values):
             most_common = set['byte_stats'].most_common(top_values)
             for key, count in most_common:
                 # Go over file data and extract chunks in window size
-                for i in range(0, int(args.m)):
+                for i in range(int(args.m)):
                     decrypted_code = de_xor(fdata[i:(i + ws)], bytearray.fromhex(key))
                     #print("S: %d E: %d CODE: %s" % (i, i+ws, decrypted_code))
                     if s in decrypted_code:
-                        print("FOUND STRING IN DECRYPTED CODE WITH KEY: %s" % get_key_string(key))
+                        print(f"FOUND STRING IN DECRYPTED CODE WITH KEY: {get_key_string(key)}")
                         print("DATA: '%s' OFFSET: %d DECRYPTED: '%s'" % (fdata[i:(i+ws)].hex(), i, decrypted_code.decode()))
                         valid_keys.append({"key": key, "mz_offset": 0})
                         # Try to determin junk data before the MZ header
@@ -130,7 +124,7 @@ def evaluate_keys(input_file, all_stats, top_values):
                         if rotated_key and mz_offset > 0:
                             print("It seems that the file has some kind of prefix (shellcode, junk etc.)")
                             print("Found MZ header at offset: %d" % mz_offset)
-                            print("Adjusted XOR key to: %s" % get_key_string(rotated_key))
+                            print(f"Adjusted XOR key to: {get_key_string(rotated_key)}")
                             valid_keys.append({"key": rotated_key, "mz_offset": mz_offset})
     # Return the valid keys
     return valid_keys
@@ -143,12 +137,23 @@ def get_key_string(key):
     :return:
     """
     ascii_addon = ''
-    ascii_key = get_ascii(key)
-    if ascii_key:
-        ascii_addon = Style.RESET_ALL + "ASCII '" + Fore.GREEN + "%s" % ascii_key + Style.RESET_ALL + "'"
-    # Hex Value
-    key_string = "HEX: '" + Fore.GREEN + '%s' % key + Style.RESET_ALL + "' %s" % ascii_addon
-    return key_string
+    if ascii_key := get_ascii(key):
+        ascii_addon = (
+            Style.RESET_ALL
+            + "ASCII '"
+            + Fore.GREEN
+            + f"{ascii_key}"
+            + Style.RESET_ALL
+            + "'"
+        )
+
+    return (
+        "HEX: '"
+        + Fore.GREEN
+        + f'{key}'
+        + Style.RESET_ALL
+        + "' %s" % ascii_addon
+    )
 
 
 def find_mz_with_key(fdata, key):
@@ -158,11 +163,11 @@ def find_mz_with_key(fdata, key):
     :param key:
     :return:
     """
-    for j in range(0, int(len(key))):
+    for j in range(len(key)):
         key_val = key[-j:] + key[:-j]
-        for i in range(0, len(fdata)):
+        for i in range(len(fdata)):
             decrypted_code = de_xor(fdata[i:(i + 2)], bytearray.fromhex(key_val))
-            if b'MZ' == decrypted_code:
+            if decrypted_code == b'MZ':
                 return i, key_val
     return 0, ''
 
@@ -201,15 +206,21 @@ def decrypt_pe(input_file, valid_keys, output_path, only_valid):
             marker = "_likely_INVALID"
             color = Fore.RED
         # Create a file name in the output path
-        filename = os.path.join(output_path, "%s_decrypted_%s%s.exe" % (
-            os.path.splitext(os.path.basename(input_file))[0],
-            vk["key"],
-            marker
-        ))
+        filename = os.path.join(
+            output_path,
+            f'{os.path.splitext(os.path.basename(input_file))[0]}_decrypted_{vk["key"]}{marker}.exe',
+        )
+
         # Generate hash
         data_hash = hashlib.md5(decrypted_data).hexdigest()
         if data_hash not in known_hashes:
-            print("Writing possible original file to " + color + "'%s'" % filename + Style.RESET_ALL + " ...")
+            print(
+                f"Writing possible original file to {color}"
+                + "'%s'" % filename
+                + Style.RESET_ALL
+                + " ..."
+            )
+
             with open(filename, 'wb') as fh:
                 fh.write(decrypted_data)
             known_hashes.append(data_hash)
@@ -284,7 +295,7 @@ if __name__ == '__main__':
     print("   /_/|_|\\____/_/|_/___/_/|_|   ")
     print(" ")
     print("   XOR Key Evaluator for Encrypted Executables")
-    print("   Florian Roth, February 2021, %s " % __version__)
+    print(f"   Florian Roth, February 2021, {__version__} ")
     print(" ".ljust(80) + Style.RESET_ALL)
     print(" ")
 
